@@ -14,11 +14,9 @@ jobs:
         with:
           submodules: true
 
-      # Étape indispensable : Configure QEMU pour l'émulation multi-architectures
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # Étape cruciale : Initialise Buildx pour lier proprement QEMU à Docker
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -28,9 +26,11 @@ jobs:
           path: third_party
           key: ${{ runner.os }}-rpi-deps-${{ hashFiles('build-deps.sh') }}
 
-      # Exécution à l'intérieur du conteneur natif ARM64 grâce à Buildx + QEMU
       - name: Build in Ubuntu ARM64 Container
         run: |
+          # Nettoyage des caractères \r (CRLF) du fichier requirements pour Linux
+          CLEANED_REQ=$(tr -d '\r' < tools/requirements-ubuntu.txt)
+
           docker run --rm --privileged \
             --platform linux/arm64 \
             -v "$PWD":/work \
@@ -38,7 +38,7 @@ jobs:
             ubuntu:24.04 \
             bash -c "
               apt-get update && \
-              apt-get install -y sudo clang cmake make git $(cat tools/requirements-ubuntu.txt) && \
+              apt-get install -y sudo clang cmake make git ${CLEANED_REQ} && \
               ./build-deps.sh 2>&1 | tee build-deps.log && \
               CC=clang CXX=clang++ cmake -B build -DCMAKE_BUILD_TYPE=Release && \
               cmake --build build --parallel 2>&1 | tee build.log && \
