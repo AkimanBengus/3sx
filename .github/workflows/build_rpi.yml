@@ -14,38 +14,46 @@ jobs:
         with:
           submodules: true
 
-      # On utilise une clé de cache dédiée à l'architecture ciblée (ARM64)
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
           path: third_party
           key: ${{ runner.os }}-rpi-deps-${{ hashFiles('build-deps.sh') }}
 
-      - name: Install Cross-Compiler and Toolchain
+      - name: Install Cross-Compiler and Architecture Libraries
         run: |
           sudo apt update
+          # Installation du compilateur croisé et des bibliothèques de base essentielles
           sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
           sudo apt install -y $(cat tools/requirements-ubuntu.txt)
         shell: bash
 
       - name: Build dependencies (Cross-Compiled)
         run: |
-          # On indique au script de build d'utiliser le compilateur cible ARM64 si nécessaire
+          set -o pipefail
+          # On configure proprement l'environnement pour que les scripts configure/make de third_party ciblent le Pi
           export CC=aarch64-linux-gnu-gcc
           export CXX=aarch64-linux-gnu-g++
-          ./build-deps.sh
+          export AR=aarch64-linux-gnu-ar
+          export AS=aarch64-linux-gnu-as
+          export RANLIB=aarch64-linux-gnu-ranlib
+          
+          ./build-deps.sh 2>&1 | tee build-deps.log
         shell: bash
 
       - name: Build Project with CMake Toolchain
         run: |
           set -o pipefail
           
-          # Configuration de CMake pour cibler l'architecture ARM64 de Linux
+          # Configuration stricte de la cross-compilation CMake
           cmake -B build \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
             -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
             -DCMAKE_BUILD_TYPE=Release
 
           cmake --build build --parallel 2>&1 | tee build.log
@@ -74,9 +82,12 @@ jobs:
           path: |
             3SX-*-rpi-arm64.tar.gz
 
-      - name: Upload Raspberry Pi build log
+      # Étape modifiée pour uploader TOUS les logs disponibles, même s'ils ont échoué
+      - name: Upload Raspberry Pi build logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log-rpi
-          path: build.log
+          name: build-logs-rpi
+          path: |
+            build-deps.log
+            build.log
