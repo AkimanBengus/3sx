@@ -71,7 +71,7 @@ jobs:
 
   build_rpi_arm64:
     name: Build Raspberry Pi (ARM64)
-    runs-on: ubuntu-24.04-arm64
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -79,37 +79,41 @@ jobs:
         with:
           submodules: true
 
+      # Étape cruciale : On configure QEMU pour permettre l'exécution d'architectures ARM64 sur du x86_64
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # On utilise une clé de cache distincte spécifique à ARM64 pour ne pas mélanger avec x86_64
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
           path: third_party
-          key: ${{ runner.os }}-deps-${{ hashFiles('build-deps.sh') }}
+          key: ${{ runner.os }}-rpi-deps-${{ hashFiles('build-deps.sh') }}
 
-      - name: Install dependencies
+      # On exécute la compilation ARM64 à l'intérieur d'un conteneur Ubuntu ARM64 émulé par QEMU
+      - name: Build in Ubuntu ARM64 Container
         run: |
-          sudo apt update
-          sudo apt install -y $(cat tools/requirements-ubuntu.txt)
-          ./build-deps.sh
-        shell: bash
+          docker run --rm --privileged \
+            -v "$PWD":/work \
+            -w /work \
+            arm64v8/ubuntu:24.04 \
+            bash -c "
+              apt update && \
+              apt install -y sudo clang cmake make git $(cat tools/requirements-ubuntu.txt) && \
+              ./build-deps.sh && \
+              CC=clang CXX=clang++ cmake -B build -DCMAKE_BUILD_TYPE=Release && \
+              cmake --build build --parallel && \
+              cpack -G TGZ --config build/CPackConfig.cmake
+            "
 
-      - name: Build
-        run: |
-          set -o pipefail
-          CC=clang CXX=clang++ cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel 2>&1 | tee build.log
-        shell: bash
-
-      - name: Package TGZ
+      - name: Finalize package name
         run: |
           set -euo pipefail
-          cpack -G TGZ --config build/CPackConfig.cmake
-
           TGZ_PATH="$(find . -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)"
           if [ -z "${TGZ_PATH}" ]; then
-            echo "No .tar.gz package found in build/"
+            echo "No .tar.gz package found!"
             exit 1
           fi
-
           SHORT_SHA="${GITHUB_SHA::7}"
           TGZ_NAME="3SX-${SHORT_SHA}-rpi-arm64.tar.gz"
           mv "${TGZ_PATH}" "${TGZ_NAME}"
@@ -295,7 +299,7 @@ jobs:
 
           touch notes.md
           echo "Automatic release for commit ${FULL_SHA}" >> notes.md
-          echo >> notes.md
+          echo >> nodes.md
           echo "⚠️ **Disclaimer** ⚠️: This is a __pre-release__ build. Expect bugs and instability." >> notes.md
 
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
