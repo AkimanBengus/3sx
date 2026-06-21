@@ -1,0 +1,82 @@
+name: Test Build Raspberry Pi
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_rpi_arm64:
+    name: Build Raspberry Pi (ARM64 - Cross-Compilation)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # On utilise une clé de cache dédiée à l'architecture ciblée (ARM64)
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: ${{ runner.os }}-rpi-deps-${{ hashFiles('build-deps.sh') }}
+
+      - name: Install Cross-Compiler and Toolchain
+        run: |
+          sudo apt update
+          sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          sudo apt install -y $(cat tools/requirements-ubuntu.txt)
+        shell: bash
+
+      - name: Build dependencies (Cross-Compiled)
+        run: |
+          # On indique au script de build d'utiliser le compilateur cible ARM64 si nécessaire
+          export CC=aarch64-linux-gnu-gcc
+          export CXX=aarch64-linux-gnu-g++
+          ./build-deps.sh
+        shell: bash
+
+      - name: Build Project with CMake Toolchain
+        run: |
+          set -o pipefail
+          
+          # Configuration de CMake pour cibler l'architecture ARM64 de Linux
+          cmake -B build \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_BUILD_TYPE=Release
+
+          cmake --build build --parallel 2>&1 | tee build.log
+        shell: bash
+
+      - name: Package TGZ
+        run: |
+          set -euo pipefail
+          cpack -G TGZ --config build/CPackConfig.cmake
+
+          TGZ_PATH="$(find . -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)"
+          if [ -z "${TGZ_PATH}" ]; then
+            echo "No .tar.gz package found!"
+            exit 1
+          fi
+
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TGZ_NAME="3SX-${SHORT_SHA}-rpi-arm64.tar.gz"
+          mv "${TGZ_PATH}" "${TGZ_NAME}"
+        shell: bash
+
+      - name: Upload Raspberry Pi release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-rpi
+          path: |
+            3SX-*-rpi-arm64.tar.gz
+
+      - name: Upload Raspberry Pi build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-rpi
+          path: build.log
