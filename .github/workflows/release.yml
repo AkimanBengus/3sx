@@ -2,6 +2,8 @@ name: Release
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ "main" ]
 
 permissions:
   contents: write
@@ -67,11 +69,92 @@ jobs:
           name: build-log-linux
           path: build.log
 
+  build_linux_arm64:
+    name: Build Linux (ARM64 / Raspberry Pi)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: linux-arm64-deps-${{ hashFiles('build-deps.sh') }}
+
+      - name: Install dependencies and build (ARM64 via Docker)
+        uses: docker/build-push-action@v0
+        # We use a direct `run` with docker instead of build-push-action
+        # because we need an interactive shell with bind mounts
+        # (build-push-action is designed for image publishing, not CI shell work)
+        # So we run everything inside a single `docker run` step instead:
+      - name: Build inside ARM64 container
+        run: |
+          docker run --rm \
+            --platform linux/arm64 \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            arm64v8/ubuntu:22.04 \
+            bash -c "
+              set -euo pipefail
+
+              # Install system packages
+              apt-get update -qq
+              apt-get install -y \$(cat tools/requirements-ubuntu.txt) \
+                clang cmake git curl xz-utils make pkg-config \
+                python3 nasm yasm
+
+              # Build third-party dependencies
+              ./build-deps.sh
+
+              # Build the project
+              CC=clang CXX=clang++ cmake -B build -DCMAKE_BUILD_TYPE=Release
+              cmake --build build --parallel \$(nproc) 2>&1 | tee build.log
+
+              # Package
+              cpack -G TGZ --config build/CPackConfig.cmake
+
+              TGZ_PATH=\"\$(find . -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)\"
+              if [ -z \"\${TGZ_PATH}\" ]; then
+                echo 'No .tar.gz package found'
+                exit 1
+              fi
+
+              SHORT_SHA=\"\${GITHUB_SHA::7}\"
+              mv \"\${TGZ_PATH}\" \"3SX-\${SHORT_SHA}-linux-arm64.tar.gz\"
+            "
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        shell: bash
+
+      - name: Upload ARM64 release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-linux-arm64
+          path: |
+            3SX-*-linux-arm64.tar.gz
+
+      - name: Upload ARM64 build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-linux-arm64
+          path: build.log
+
   release:
     name: Create GitHub release
     runs-on: ubuntu-latest
     needs:
       - build_linux
+      - build_linux_arm64
 
     steps:
       - name: Checkout repository
