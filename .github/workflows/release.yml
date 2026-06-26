@@ -90,12 +90,6 @@ jobs:
           path: third_party
           key: linux-arm64-deps-${{ hashFiles('build-deps.sh') }}
 
-      - name: Install dependencies and build (ARM64 via Docker)
-        uses: docker/build-push-action@v0
-        # We use a direct `run` with docker instead of build-push-action
-        # because we need an interactive shell with bind mounts
-        # (build-push-action is designed for image publishing, not CI shell work)
-        # So we run everything inside a single `docker run` step instead:
       - name: Build inside ARM64 container
         run: |
           docker run --rm \
