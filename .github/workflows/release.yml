@@ -100,11 +100,22 @@ jobs:
             bash -c "
               set -euo pipefail
 
-              # Install system packages
+              # Install system packages (without cmake — we install a recent version below)
               apt-get update -qq
               apt-get install -y \$(cat tools/requirements-ubuntu.txt) \
-                clang cmake git curl xz-utils make pkg-config \
-                python3 nasm yasm
+                clang git curl xz-utils make pkg-config \
+                python3 nasm yasm ca-certificates gpg
+
+              # Install CMake >= 3.24 from Kitware official apt repo
+              # (Ubuntu 22.04 ships 3.22 which is too old for this project)
+              curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc \
+                | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+              echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' \
+                > /etc/apt/sources.list.d/kitware.list
+              apt-get update -qq
+              apt-get install -y cmake
+
+              cmake --version
 
               # Build third-party dependencies
               ./build-deps.sh
