@@ -71,7 +71,7 @@ jobs:
 
   build_linux_arm64:
     name: Build Linux (ARM64 / Raspberry Pi)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, arm64]
 
     steps:
       - name: Checkout repository
@@ -79,59 +79,24 @@ jobs:
         with:
           submodules: true
 
-      - name: Install cross-compilation toolchain
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu \
-            cmake ninja-build \
-            git curl xz-utils make pkg-config python3 \
-            nasm yasm ca-certificates
-        shell: bash
-
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
           path: third_party
           key: linux-arm64-deps-${{ hashFiles('build-deps.sh') }}
 
-      - name: Build third-party dependencies (cross-compiled)
+      - name: Install dependencies
         run: |
-          set -euo pipefail
-
-          # Tell build-deps.sh to cross-compile for ARM64
-          export CC=aarch64-linux-gnu-gcc
-          export CXX=aarch64-linux-gnu-g++
-          export AR=aarch64-linux-gnu-ar
-          export RANLIB=aarch64-linux-gnu-ranlib
-          export STRIP=aarch64-linux-gnu-strip
-
-          # Extra CMake flags forwarded to every cmake call inside build-deps.sh
-          export CMAKE_TOOLCHAIN_FLAGS="\
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY"
-
-          ./build-deps.sh
+          sudo apt-get update -qq
+          sudo apt-get install -y $(cat tools/requirements-ubuntu.txt) \
+            clang cmake git curl xz-utils make pkg-config \
+            python3 nasm yasm
         shell: bash
 
-      - name: Build project (cross-compiled)
+      - name: Build
         run: |
           set -o pipefail
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
+          CC=clang CXX=clang++ cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel $(nproc) 2>&1 | tee build.log
         shell: bash
 

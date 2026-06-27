@@ -41,28 +41,6 @@ fi
 echo "Using $BUILD_JOBS build job(s)"
 
 # -----------------------------
-# Cross-compilation support
-# -----------------------------
-# Set CROSS_COMPILE_PREFIX to the toolchain prefix to cross-compile.
-# Example: CROSS_COMPILE_PREFIX=aarch64-linux-gnu
-# When unset or empty, native compilation is used (default).
-#
-# For CMake-based libs, also export CMAKE_TOOLCHAIN_FLAGS with the
-# appropriate -DCMAKE_* flags before calling this script.
-# The release.yml workflow sets both variables automatically.
-
-CROSS_COMPILE_PREFIX="${CROSS_COMPILE_PREFIX:-}"
-
-if [ -n "$CROSS_COMPILE_PREFIX" ]; then
-    echo "Cross-compiling with prefix: $CROSS_COMPILE_PREFIX"
-    FFMPEG_CROSS_FLAGS="--cross-prefix=${CROSS_COMPILE_PREFIX}- --arch=${CROSS_COMPILE_PREFIX%%-*} --target-os=linux --enable-cross-compile"
-    AUTOTOOLS_HOST="--host=${CROSS_COMPILE_PREFIX}"
-else
-    FFMPEG_CROSS_FLAGS=""
-    AUTOTOOLS_HOST=""
-fi
-
-# -----------------------------
 # FFmpeg
 # -----------------------------
 
@@ -110,8 +88,7 @@ else
                 --enable-pic \
                 --extra-cflags="-fPIC" \
                 --extra-ldflags="-Wl,-rpath,\$ORIGIN/../lib" \
-                --install-name-dir=\$ORIGIN \
-                $FFMPEG_CROSS_FLAGS
+                --install-name-dir=\$ORIGIN
             ;;
         MINGW*|MSYS*|CYGWIN*)
             ../configure \
@@ -165,8 +142,7 @@ else
         -DCMAKE_INSTALL_PREFIX="$SDL_BUILD" \
         -DBUILD_SHARED_LIBS=ON \
         -DSDL_SHARED=ON \
-        -DSDL_STATIC=ON \
-        ${CMAKE_TOOLCHAIN_FLAGS:-}
+        -DSDL_STATIC=ON
 
     cmake --build "$SDL_SRC/cmake-build" -j"$BUILD_JOBS"
     cmake --install "$SDL_SRC/cmake-build"
@@ -195,8 +171,7 @@ else
     cmake -S "$GEKKONET_SRC" -B "$GEKKONET_SRC/cmake-build" \
         -DCMAKE_BUILD_TYPE=Release \
         -DNO_ASIO_BUILD=ON \
-        -DBUILD_SHARED_LIBS=OFF \
-        ${CMAKE_TOOLCHAIN_FLAGS:-}
+        -DBUILD_SHARED_LIBS=OFF
 
     cmake --build "$GEKKONET_SRC/cmake-build" -j"$BUILD_JOBS"
 
@@ -229,8 +204,7 @@ else
         -DCMAKE_INSTALL_PREFIX="$SDL3_NET_BUILD" \
         -DCMAKE_PREFIX_PATH="$SDL_BUILD" \
         -DBUILD_SHARED_LIBS=OFF \
-        -DSDLNET_INSTALL=ON \
-        ${CMAKE_TOOLCHAIN_FLAGS:-}
+        -DSDLNET_INSTALL=ON
 
     cmake --build "$SDL3_NET_SRC/cmake-build" -j"$BUILD_JOBS"
     cmake --install "$SDL3_NET_SRC/cmake-build"
@@ -270,8 +244,7 @@ else
         --enable-static \
         --disable-shared \
         --disable-cxx \
-        --disable-example-progs \
-        $AUTOTOOLS_HOST
+        --disable-example-progs
 
     make
     make install
@@ -318,8 +291,7 @@ else
         -DMZ_WZAES=OFF \
         -DMZ_OPENSSL=OFF \
         -DMZ_LIBBSD=OFF \
-        -DMZ_DECOMPRESS_ONLY=ON \
-        ${CMAKE_TOOLCHAIN_FLAGS:-}
+        -DMZ_DECOMPRESS_ONLY=ON
 
     cmake --build "$MINIZIP_NG_SRC/cmake-build" -j"$BUILD_JOBS"
     cmake --install "$MINIZIP_NG_SRC/cmake-build"
@@ -355,8 +327,7 @@ else
         -DENABLE_TESTING=OFF \
         -DUSE_SHARED_TF_PSA_CRYPTO_LIBRARY=OFF \
         -DUSE_STATIC_TF_PSA_CRYPTO_LIBRARY=ON \
-        -DTF_PSA_CRYPTO_CONFIG_FILE="configs/crypto-config-ccm-aes-sha256.h" \
-        ${CMAKE_TOOLCHAIN_FLAGS:-}
+        -DTF_PSA_CRYPTO_CONFIG_FILE="configs/crypto-config-ccm-aes-sha256.h"
 
     cmake --build "$TF_PSA_CRYPTO_SRC/cmake-build" -j"$BUILD_JOBS"
     cmake --install "$TF_PSA_CRYPTO_SRC/cmake-build"
