@@ -83,13 +83,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: third_party
-          key: linux-arm64-deps-${{ hashFiles('build-deps.sh') }}
+          key: linux-arm64-deps-${{ hashFiles('build-deps-rpi.sh') }}
 
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y $(cat tools/requirements-ubuntu.txt)             clang cmake git curl xz-utils make pkg-config             python3 nasm yasm
-          ./build-deps.sh
+          ./build-deps-rpi.sh
         shell: bash
 
       - name: Build
