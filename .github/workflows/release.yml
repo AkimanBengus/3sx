@@ -79,10 +79,16 @@ jobs:
         with:
           submodules: true
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
+      - name: Install cross-compilation toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            cmake ninja-build \
+            git curl xz-utils make pkg-config python3 \
+            nasm yasm ca-certificates
+        shell: bash
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -90,54 +96,58 @@ jobs:
           path: third_party
           key: linux-arm64-deps-${{ hashFiles('build-deps.sh') }}
 
-      - name: Build inside ARM64 container
+      - name: Build third-party dependencies (cross-compiled)
         run: |
-          docker run --rm \
-            --platform linux/arm64 \
-            -v "${{ github.workspace }}:/workspace" \
-            -w /workspace \
-            arm64v8/ubuntu:22.04 \
-            bash -c "
-              set -euo pipefail
+          set -euo pipefail
 
-              # Install system packages (without cmake — we install a recent version below)
-              apt-get update -qq
-              apt-get install -y \$(cat tools/requirements-ubuntu.txt) \
-                clang git curl xz-utils make pkg-config \
-                python3 nasm yasm ca-certificates gpg
+          # Tell build-deps.sh to cross-compile for ARM64
+          export CC=aarch64-linux-gnu-gcc
+          export CXX=aarch64-linux-gnu-g++
+          export AR=aarch64-linux-gnu-ar
+          export RANLIB=aarch64-linux-gnu-ranlib
+          export STRIP=aarch64-linux-gnu-strip
 
-              # Install CMake >= 3.24 from Kitware official apt repo
-              # (Ubuntu 22.04 ships 3.22 which is too old for this project)
-              curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc \
-                | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
-              echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' \
-                > /etc/apt/sources.list.d/kitware.list
-              apt-get update -qq
-              apt-get install -y cmake
+          # Extra CMake flags forwarded to every cmake call inside build-deps.sh
+          export CMAKE_TOOLCHAIN_FLAGS="\
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY"
 
-              cmake --version
+          ./build-deps.sh
+        shell: bash
 
-              # Build third-party dependencies
-              ./build-deps.sh
+      - name: Build project (cross-compiled)
+        run: |
+          set -o pipefail
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
+          cmake --build build --parallel $(nproc) 2>&1 | tee build.log
+        shell: bash
 
-              # Build the project
-              CC=clang CXX=clang++ cmake -B build -DCMAKE_BUILD_TYPE=Release
-              cmake --build build --parallel \$(nproc) 2>&1 | tee build.log
+      - name: Package TGZ
+        run: |
+          set -euo pipefail
+          cpack -G TGZ --config build/CPackConfig.cmake
 
-              # Package
-              cpack -G TGZ --config build/CPackConfig.cmake
+          TGZ_PATH="$(find . -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)"
+          if [ -z "${TGZ_PATH}" ]; then
+            echo "No .tar.gz package found"
+            exit 1
+          fi
 
-              TGZ_PATH=\"\$(find . -maxdepth 1 -type f -name '*.tar.gz' | head -n 1)\"
-              if [ -z \"\${TGZ_PATH}\" ]; then
-                echo 'No .tar.gz package found'
-                exit 1
-              fi
-
-              SHORT_SHA=\"\${GITHUB_SHA::7}\"
-              mv \"\${TGZ_PATH}\" \"3SX-\${SHORT_SHA}-linux-arm64.tar.gz\"
-            "
-        env:
-          GITHUB_SHA: ${{ github.sha }}
+          SHORT_SHA="${GITHUB_SHA::7}"
+          mv "${TGZ_PATH}" "3SX-${SHORT_SHA}-linux-arm64.tar.gz"
         shell: bash
 
       - name: Upload ARM64 release assets
