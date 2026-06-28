@@ -71,7 +71,7 @@ jobs:
 
   build_linux_arm64:
     name: Build Linux (ARM64 / Raspberry Pi)
-    runs-on: ubuntu-24.04-arm
+    runs-on: [self-hosted, linux, arm64]
 
     steps:
       - name: Checkout repository
