@@ -50,6 +50,7 @@ typedef enum ScaleMode {
     SCALEMODE_NEAREST,
     SCALEMODE_SQUARE_PIXELS,
     SCALEMODE_INTEGER,
+    SCALEMODE_VERTICAL_INTEGER,
 } ScaleMode;
 
 typedef enum AppPhase {
@@ -60,14 +61,16 @@ typedef enum AppPhase {
 
 static AppPhase phase = APP_PHASE_INIT;
 
+static const int game_native_pixel_height = 224;
 static const char* app_name = "Street Fighter III: 3rd Strike";
-static const float display_target_ratio = 4.0 / 3.0;
-static const int window_min_width = 384;
-static const int window_min_height = (int)(window_min_width / display_target_ratio);
+static const float display_target_ratio_default = 4.0 / 3.0;
+static const int window_min_height = game_native_pixel_height;
+static const int window_min_width = (int)(window_min_height * display_target_ratio_default);
 static const Uint64 target_frame_time_ns = 1000000000.0 / TARGET_FPS;
 
 static SDL_Window* window = NULL;
 static ScaleMode scale_mode = SCALEMODE_NEAREST;
+static float display_target_ratio = display_target_ratio_default;
 
 static Uint64 frame_deadline = 0;
 static FrameMetrics frame_metrics = { 0 };
@@ -77,6 +80,12 @@ static Uint64 last_mouse_motion_time = 0;
 static const int mouse_hide_delay_ms = 2000; // 2 seconds
 
 static void init_scalemode() {
+    float raw_display_target_ratio = Config_GetFloat(CFG_KEY_ASPECT_RATIO);
+
+    if (raw_display_target_ratio != 0.0f) {
+        display_target_ratio = raw_display_target_ratio;
+    }
+
     const char* raw_scalemode = Config_GetString(CFG_KEY_SCALEMODE);
 
     if (raw_scalemode == NULL) {
@@ -89,6 +98,8 @@ static void init_scalemode() {
         scale_mode = SCALEMODE_SQUARE_PIXELS;
     } else if (SDL_strcmp(raw_scalemode, "integer") == 0) {
         scale_mode = SCALEMODE_INTEGER;
+    } else if (SDL_strcmp(raw_scalemode, "vertical-integer") == 0) {
+        scale_mode = SCALEMODE_VERTICAL_INTEGER;
     }
 }
 
@@ -287,12 +298,28 @@ static void center_rect(SDL_Rect* rect, int win_w, int win_h) {
 
 static SDL_Rect fit_4_by_3_rect(int win_w, int win_h) {
     SDL_Rect rect;
-    rect.w = win_w;
-    rect.h = (int)((float)win_w / display_target_ratio);
 
-    if (rect.h > win_h) {
-        rect.h = win_h;
-        rect.w = (int)((float)win_h * display_target_ratio);
+    if (scale_mode == SCALEMODE_VERTICAL_INTEGER) {
+        // calculate the lower multiple of game_native_pixel_height using integer division
+        int integer_scale_h = (win_h / game_native_pixel_height) * game_native_pixel_height;
+
+        // safety check to ensure height is at least game_native_pixel_height
+        integer_scale_h = (integer_scale_h < game_native_pixel_height) ? game_native_pixel_height : integer_scale_h;
+
+        rect.h = integer_scale_h;
+        rect.w = (int)SDL_lroundf((float)integer_scale_h * display_target_ratio);
+
+        SDL_Log("fit_4_by_3_rect - adapted rect.w: %d, rect.h: %d with display_target_ratio: %f (float version)", rect.w, rect.h, display_target_ratio);
+    }
+    else
+    {
+        rect.w = win_w;
+        rect.h = (int)((float)win_w / display_target_ratio);
+
+        if (rect.h > win_h) {
+            rect.h = win_h;
+            rect.w = (int)((float)win_h * display_target_ratio);
+        }
     }
 
     center_rect(&rect, win_w, win_h);
@@ -321,6 +348,7 @@ static SDL_Rect fit_integer_rect(int win_w, int win_h, int pixel_w, int pixel_h)
 static SDL_Rect get_letterbox_rect(int win_w, int win_h) {
     switch (scale_mode) {
     case SCALEMODE_NEAREST:
+    case SCALEMODE_VERTICAL_INTEGER:
         return fit_4_by_3_rect(win_w, win_h);
 
     case SCALEMODE_INTEGER:
