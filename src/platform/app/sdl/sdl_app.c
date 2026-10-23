@@ -316,6 +316,8 @@ static SDL_Rect fit_scale_rect(int win_w, int win_h) {
 
         rect.h = factor * game_native_pixel_height;
         rect.w = (int)(rect.h * display_target_ratio);
+        
+        SDL_Log("fit_scale_rect - SCALEMODE_VERTICAL_INTEGER - rect.w: %d, rect.h: %d with display_target_ratio: %f", rect.w, rect.h, display_target_ratio);
     }
     else {
         rect.h = win_h;
@@ -324,8 +326,14 @@ static SDL_Rect fit_scale_rect(int win_w, int win_h) {
         if (rect.w > win_w) {
             rect.w = win_w;
             rect.h = (int)(win_w / display_target_ratio);
+            SDL_Log("fit_scale_rect - SCALEMODE_NEAREST - adapted rect.w: %d, rect.h: %d with display_target_ratio: %f", rect.w, rect.h, display_target_ratio);
+        }
+        else {
+            SDL_Log("fit_scale_rect - SCALEMODE_NEAREST - original rect.w: %d, rect.h: %d with display_target_ratio: %f", rect.w, rect.h, display_target_ratio);
         }
     }
+
+    SDL_Log("");
 
     center_rect(&rect, win_w, win_h);
     return rect;
